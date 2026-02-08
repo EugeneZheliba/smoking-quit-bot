@@ -1,69 +1,92 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram import Update
 import random
-import asyncio
+import datetime
 
+# Токен вашего бота
 TOKEN = "ВАШ_BOT_TOKEN"
 
-KEYWORDS = {
-    "курение": ["курение", "сигарета", "дым", "никотин", "выкурить"],
-    "бросить": ["бросить", "отказаться", "перестать", "не курю", "quit"],
-}
+# Хранилище для пользователей и прогресса
+user_data = {}
 
+# Советы и мотивация
 ADVICE_LIST = [
-    "Дыши глубоко и медленно, когда появляется желание закурить.",
-    "Помни, зачем ты решил бросить курить — держи цель перед глазами.",
-    "Замени сигарету на полезную привычку: вода, фрукт, прогулка.",
-    "Отслеживай свои успехи: каждый день без сигареты — победа!",
-    "Если возникает стресс, попробуй дыхательные упражнения или короткую прогулку."
+    "Сделай глубокий вдох и выдох — тяга к сигарете пройдет.",
+    "Вспомни, зачем ты бросил курить. Ты сильнее привычки!",
+    "Замени сигарету на стакан воды или короткую прогулку.",
+    "Сфокусируйся на пользе для здоровья: лёгкие чистятся, сердце работает лучше.",
 ]
 
 REMINDERS = [
-    "Напоминание: ты уже продержался без сигареты сегодня, молодец!",
-    "Сохрани мотивацию — представь себя здоровым и свободным от никотина!",
-    "Каждое «нет» сигарете — это шаг к твоей цели."
+    "Напоминание: ты уже держишься без сигареты! Продолжай в том же духе.",
+    "Мотивация: представь себя свободным от никотина и здоровым.",
 ]
 
-context_data = {"chats": set()}
+# Ключевые слова и их синонимы для «умного» ответа
+TRIGGERS = {
+    "кур": ["сигар", "затянулся", "курю", "тянет", "дым"],
+    "стресс": ["нервничаю", "раздражение", "тревога"],
+    "хочу": ["нужно", "не могу", "сильное желание"]
+}
 
-async def start(update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: CallbackContext):
+    user_id = update.effective_chat.id
+    user_data[user_id] = {"start_time": datetime.datetime.now(), "last_message": ""}
     await update.message.reply_text(
-        "Привет! Я твой помощник в отказе от курения. Пиши мне о своих чувствах и желаниях, "
-        "и я дам советы, как справиться с тягой к сигарете."
+        "Привет! Я твой помощник в отказе от курения.\n"
+        "Пиши мне, когда тянет закурить, и я дам советы.\n"
+        "Я буду присылать мотивацию и напоминания каждый день."
     )
 
-async def smart_reply(update, context: ContextTypes.DEFAULT_TYPE):
+async def progress(update: Update, context: CallbackContext):
+    user_id = update.effective_chat.id
+    if user_id in user_data:
+        start_time = user_data[user_id]["start_time"]
+        elapsed = datetime.datetime.now() - start_time
+        hours = elapsed.total_seconds() // 3600
+        days = hours // 24
+        await update.message.reply_text(
+            f"Ты держишься без сигарет уже {int(days)} дней и {int(hours % 24)} часов! Молодец!"
+        )
+    else:
+        await update.message.reply_text("Ты ещё не начал со мной путь к свободе от курения. Используй /start.")
+
+# Умные ответы по ключевым словам и синонимам
+async def smart_reply(update: Update, context: CallbackContext):
+    user_id = update.effective_chat.id
     text = update.message.text.lower()
-    response = None
+    response = "Я могу дать советы по отказу от курения, напиши, если тянет закурить."
 
-    if any(word in text for word in KEYWORDS["курение"]):
-        response = random.choice(ADVICE_LIST)
-    elif any(word in text for word in KEYWORDS["бросить"]):
-        response = "Отлично, что ты хочешь бросить! Продолжай в том же духе. 💪"
+    for key, synonyms in TRIGGERS.items():
+        if any(word in text for word in synonyms):
+            response = random.choice(ADVICE_LIST)
+            break
 
-    if not response:
-        response = "Я не совсем понял, но я могу дать советы по отказу от курения. Попробуй написать, что тебя тревожит."
+    if user_id in user_data:
+        user_data[user_id]["last_message"] = text
+    else:
+        user_data[user_id] = {"start_time": datetime.datetime.now(), "last_message": text}
 
     await update.message.reply_text(response)
 
-async def track_chats(update, context: ContextTypes.DEFAULT_TYPE):
-    context_data["chats"].add(update.effective_chat.id)
-    await smart_reply(update, context)
-
-# Функция для отправки напоминаний
+# Функция для регулярных напоминаний
 async def send_reminder(context: CallbackContext):
-    for chat_id in context_data["chats"]:
-        await context.bot.send_message(chat_id, random.choice(REMINDERS))
+    for user_id in user_data:
+        await context.bot.send_message(chat_id=user_id, text=random.choice(REMINDERS))
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Обработчики
+    # Обработчики команд
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_chats))
+    app.add_handler(CommandHandler("progress", progress))
+    # Обработчик всех текстовых сообщений
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, smart_reply))
 
-    # JobQueue для напоминаний каждые 2 часа
-    app.job_queue.run_repeating(send_reminder, interval=7200, first=10)
+    # Напоминания каждые 4 часа
+    app.job_queue.run_repeating(send_reminder, interval=14400, first=10)
 
+    # Запуск бота
     app.run_polling()
 
 if __name__ == "__main__":
