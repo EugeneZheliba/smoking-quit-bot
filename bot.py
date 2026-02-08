@@ -1,24 +1,14 @@
-import logging
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext, JobQueue
 import random
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
 
-# Включаем логирование
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-
-# Твой токен бота (замени на свой токен от BotFather)
 TOKEN = "ВАШ_BOT_TOKEN"
 
-# Словарь с синонимами для "курение", "сигарета", "бросить"
 KEYWORDS = {
     "курение": ["курение", "сигарета", "дым", "никотин", "выкурить"],
     "бросить": ["бросить", "отказаться", "перестать", "не курю", "quit"],
 }
 
-# Советы для отказа от курения
 ADVICE_LIST = [
     "Дыши глубоко и медленно, когда появляется желание закурить.",
     "Помни, зачем ты решил бросить курить — держи цель перед глазами.",
@@ -27,68 +17,53 @@ ADVICE_LIST = [
     "Если возникает стресс, попробуй дыхательные упражнения или короткую прогулку."
 ]
 
-# Напоминания каждые 2 часа
 REMINDERS = [
     "Напоминание: ты уже продержался без сигареты сегодня, молодец!",
     "Сохрани мотивацию — представь себя здоровым и свободным от никотина!",
     "Каждое «нет» сигарете — это шаг к твоей цели."
 ]
 
-# --- Функции бота ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+context_data = {"chats": set()}
+
+async def start(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я твой помощник в отказе от курения. Пиши мне о своих чувствах и желаниях, "
         "и я дам советы, как справиться с тягой к сигарете."
     )
 
-# Умная обработка сообщений через ключевые слова и синонимы
-async def smart_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def smart_reply(update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
     response = None
 
-    # Проверка по ключевым словам
     if any(word in text for word in KEYWORDS["курение"]):
         response = random.choice(ADVICE_LIST)
     elif any(word in text for word in KEYWORDS["бросить"]):
         response = "Отлично, что ты хочешь бросить! Продолжай в том же духе. 💪"
 
-    # Если не найдено ключевых слов, даём нейтральный ответ
     if not response:
         response = "Я не совсем понял, но я могу дать советы по отказу от курения. Попробуй написать, что тебя тревожит."
 
     await update.message.reply_text(response)
 
-# Планировщик напоминаний каждые 2 часа
-async def reminders_scheduler(app):
-    while True:
-        for chat_id in context_data["chats"]:
-            await app.bot.send_message(chat_id, random.choice(REMINDERS))
-        await asyncio.sleep(7200)  # 2 часа
-
-# Хранилище чатов, чтобы отправлять напоминания
-context_data = {"chats": set()}
-
-async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def track_chats(update, context: ContextTypes.DEFAULT_TYPE):
     context_data["chats"].add(update.effective_chat.id)
     await smart_reply(update, context)
 
-# --- Главная функция ---
+# Функция для отправки напоминаний
+async def send_reminder(context: CallbackContext):
+    for chat_id in context_data["chats"]:
+        await context.bot.send_message(chat_id, random.choice(REMINDERS))
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Команда /start
+    # Обработчики
     app.add_handler(CommandHandler("start", start))
-
-    # Все сообщения обрабатываем через трекер и умную функцию
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_chats))
 
-    # Запуск планировщика в фоне
-    async def scheduler():
-        await reminders_scheduler(app)
+    # JobQueue для напоминаний каждые 2 часа
+    app.job_queue.run_repeating(send_reminder, interval=7200, first=10)
 
-    app.job_queue.run_repeating(lambda _: asyncio.create_task(scheduler()), interval=7200, first=10)
-
-    # Запуск бота
     app.run_polling()
 
 if __name__ == "__main__":
