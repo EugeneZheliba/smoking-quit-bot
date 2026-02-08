@@ -1,10 +1,12 @@
 import os
+import random
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import random
 
+# Токен берем из переменной окружения
 TOKEN = os.getenv("BOT_TOKEN")
 
+# Советы для отказа от курения
 ADVICE_LIST = [
     "Начни с малого: откладывай первую сигарету дня на 30 минут.",
     "Пей воду, когда хочется курить — тяга часто проходит через 5–10 минут.",
@@ -13,14 +15,16 @@ ADVICE_LIST = [
     "Каждый день без сигарет — это уже победа."
 ]
 
+# Поддержка при тяге
 CRAVING_HELP = [
     "Тяга длится не больше 10 минут. Сделай 10 глубоких вдохов.",
-    "Отвлекись: пройдися, умойся холодной водой.",
+    "Отвлекись: пройдись, умойся холодной водой.",
     "Ты не хочешь сигарету — ты хочешь, чтобы прошло напряжение. Оно пройдёт.",
     "Вспомни: ты уже принял решение бросить. Не сдавайся сейчас.",
     "Каждый раз, когда ты не куришь — зависимость слабеет."
 ]
 
+# Команды бота
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! 👋\nЯ помогу тебе бросить курить 🚭\n\nКоманды:\n/advice\n/craving\n/money <цена_пачки> <пачек_в_день> <дней>"
@@ -42,22 +46,34 @@ async def craving(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(random.choice(CRAVING_HELP))
 
 async def money(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 3:
+        await update.message.reply_text(
+            "Использование:\n/money <цена_пачки> <пачек_в_день> <дней>\nПример: /money 90 1 30"
+        )
+        return
     try:
         price = float(context.args[0])
         packs_per_day = float(context.args[1])
         days = int(context.args[2])
         total = price * packs_per_day * days
         await update.message.reply_text(f"💰 Экономия за {days} дней: {total:.2f} грн")
-    except:
-        await update.message.reply_text("Использование:\n/money <цена_пачки> <пачек_в_день> <дней>\nПример: /money 90 1 30")
+    except ValueError:
+        await update.message.reply_text("Введите корректные числа!")
 
+# Главная функция
 def main():
+    if not TOKEN:
+        print("Ошибка: переменная окружения BOT_TOKEN не найдена!")
+        return
+
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("advice", advice))
     app.add_handler(CommandHandler("craving", craving))
     app.add_handler(CommandHandler("money", money))
+
     print("Бот запущен...")
     app.run_polling()
 
