@@ -1,103 +1,76 @@
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from datetime import datetime, timedelta, time as dt_time
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import random
-import asyncio
 
-# ======= Пользователи =======
-# Для простоты — словарь в памяти
-users = {}  # user_id : {"mood": [], "cravings": [], "challenges_done": []}
-
-# ======= Списки мотиваций и заданий =======
-MOTIVATION_MESSAGES = [
-    "Каждый день без сигареты — шаг к свободе!",
-    "Ты справляешься! Сделай глубокий вдох и почувствуй силу!",
-    "Сила воли растёт каждый день, продолжай так!",
-    "Не сдавайся! Маленькая победа сегодня — большая завтра."
+# ====== Мотивационные сообщения ======
+motivations = [
+    "Отлично! Каждый день без сигареты — победа.",
+    "Помни, чем дольше ты держишься, тем сильнее твоя сила воли!",
+    "Ты справляешься, продолжай так!",
+    "Отказ от курения — инвестиция в здоровье."
 ]
 
-MINI_CHALLENGES = [
-    "Сделай 10 приседаний",
-    "Выпей стакан воды",
-    "Сделай 5 глубоких вдохов и выдохов",
-    "Запиши 3 вещи, за которые благодарен"
-]
+# ====== Ответы на сигналы собеседника ======
+keywords = {
+    "тянет": ["Держись! Сделай глубокий вдох и выпей воды."],
+    "хочу курить": ["Попробуй отвлечься: прогуляйся или сделай дыхательное упражнение."],
+    "стресс": ["Стресс пройдёт! Попробуй медитацию или короткую прогулку."],
+    "нерв": ["Считай до 10, глубоко вдохни и выдохни. Всё под контролем."],
+}
 
-# ======= Хендлеры команд =======
+# ====== Обработчики команд ======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    users[user_id] = {"mood": [], "cravings": [], "challenges_done": []}
     await update.message.reply_text(
-        "Привет! Я твой помощник по отказу от курения.\n"
-        "Я буду напоминать тебе о дыхательных упражнениях, мотивации и мини-заданиях.\n"
-        "Пиши 'тягa' если появляется желание курить, или 'настроение' чтобы сообщить как ты себя чувствуешь."
+        "Привет! Я бот-помощник в отказе от курения.\n"
+        "Команды:\n"
+        "/mood - поделиться настроением\n"
+        "/help - подсказки и мотивация\n\n"
+        "Просто пиши мне свои ощущения или трудности — я дам советы!"
     )
 
-async def log_craving(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    users.setdefault(user_id, {"mood": [], "cravings": [], "challenges_done": []})
-    users[user_id]["cravings"].append((datetime.now(), True))
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Записал твою тягу к курению. Давай сделаем маленькое отвлечение!"
+        "Если тебя тянет курить, напиши об этом, и я дам совет.\n"
+        "Также можешь использовать /mood, чтобы записать своё настроение.\n"
+        "Я буду напоминать о мотивации и поддерживать тебя каждый день!"
     )
-    # Авто-задание для отвлечения
-    challenge = random.choice(MINI_CHALLENGES)
-    await update.message.reply_text(f"Попробуй сделать это: {challenge}")
 
+# ====== Логирование настроения ======
 async def log_mood(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    mood_text = ' '.join(context.args).lower()
-    users.setdefault(user_id, {"mood": [], "cravings": [], "challenges_done": []})
-    if "хорошо" in mood_text or "отлично" in mood_text:
-        mood = "mood_good"
-    elif "плохо" in mood_text or "устал" in mood_text:
-        mood = "mood_bad"
+    if context.args:
+        mood_text = " ".join(context.args)
+        await update.message.reply_text(
+            f"Настроение записано: {mood_text}\n"
+            f"{random.choice(motivations)}"
+        )
     else:
-        mood = "mood_neutral"
-    users[user_id]["mood"].append((datetime.now(), mood))
-    await update.message.reply_text("Отлично, записал твоё настроение!")
+        await update.message.reply_text("Пиши после команды, как у тебя настроение. Например: /mood Отличное")
 
-# ======= Авто-нагадування =======
-async def auto_check(context: ContextTypes.DEFAULT_TYPE):
-    for user_id, data in users.items():
-        last_mood = data["mood"][-1][1] if data["mood"] else None
-        if last_mood == "mood_bad":
-            msg = "Вижу, что последние дни были тяжёлые. Сделай дыхательное упражнение или короткую прогулку!"
-        elif last_mood == "mood_good":
-            msg = "Отлично! Продолжай держать себя в форме — каждый день без сигарет важен!"
-        else:
-            msg = random.choice([
-                "Как твоё настроение сейчас? 😊",
-                "Проверка: была ли тяга к курению сегодня?",
-                "Не забывай пить воду и делать дыхательные упражнения!"
-            ])
-        await context.bot.send_message(chat_id=user_id, text=msg)
+# ====== Обработка любых сообщений ======
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    responded = False
+    for key, responses in keywords.items():
+        if key in text:
+            await update.message.reply_text(random.choice(responses))
+            responded = True
+            break
+    if not responded:
+        await update.message.reply_text(random.choice(motivations))
 
-# ======= Ответ на любое сообщение =======
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.lower()
-    if "тягa" in user_text or "хочу курить" in user_text:
-        await log_craving(update, context)
-    elif "настроение" in user_text or "как дела" in user_text:
-        await update.message.reply_text("Расскажи, как ты себя чувствуешь (хорошо/плохо/нейтрально)")
-    else:
-        await update.message.reply_text(random.choice(MOTIVATION_MESSAGES))
-
-# ======= Настройка бота и JobQueue =======
+# ====== Основная функция ======
 def main():
-    TOKEN = "8347663636:AAEXmoHDtxn98dgu13KeQLQzSW33SzpXn4c"
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token("8347663636:AAEXmoHDtxn98dgu13KeQLQzSW33SzpXn4c").build()
 
     # Команды
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("настроение", log_mood))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("mood", log_mood))
 
-    # Авто-напоминания
-    app.job_queue.run_daily(auto_check, time=dt_time(hour=9, minute=0))
-    app.job_queue.run_daily(auto_check, time=dt_time(hour=21, minute=0))
+    # Сообщения
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Бот запущен!")
+    # Запуск
     app.run_polling()
 
 if __name__ == "__main__":
