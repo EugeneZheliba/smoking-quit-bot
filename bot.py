@@ -1,80 +1,94 @@
-import os
+import logging
 import random
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
 
-# Токен берем из переменной окружения
-TOKEN = os.getenv("BOT_TOKEN")
+# Включаем логирование
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+
+# Твой токен бота (замени на свой токен от BotFather)
+TOKEN = "ВАШ_BOT_TOKEN"
+
+# Словарь с синонимами для "курение", "сигарета", "бросить"
+KEYWORDS = {
+    "курение": ["курение", "сигарета", "дым", "никотин", "выкурить"],
+    "бросить": ["бросить", "отказаться", "перестать", "не курю", "quit"],
+}
 
 # Советы для отказа от курения
 ADVICE_LIST = [
-    "Начни с малого: откладывай первую сигарету дня на 30 минут.",
-    "Пей воду, когда хочется курить — тяга часто проходит через 5–10 минут.",
-    "Избегай триггеров: кофе, алкоголь, стресс в первые недели.",
-    "Напоминай себе, зачем ты бросаешь: здоровье, деньги, свобода.",
-    "Каждый день без сигарет — это уже победа."
+    "Дыши глубоко и медленно, когда появляется желание закурить.",
+    "Помни, зачем ты решил бросить курить — держи цель перед глазами.",
+    "Замени сигарету на полезную привычку: вода, фрукт, прогулка.",
+    "Отслеживай свои успехи: каждый день без сигареты — победа!",
+    "Если возникает стресс, попробуй дыхательные упражнения или короткую прогулку."
 ]
 
-# Поддержка при тяге
-CRAVING_HELP = [
-    "Тяга длится не больше 10 минут. Сделай 10 глубоких вдохов.",
-    "Отвлекись: пройдись, умойся холодной водой.",
-    "Ты не хочешь сигарету — ты хочешь, чтобы прошло напряжение. Оно пройдёт.",
-    "Вспомни: ты уже принял решение бросить. Не сдавайся сейчас.",
-    "Каждый раз, когда ты не куришь — зависимость слабеет."
+# Напоминания каждые 2 часа
+REMINDERS = [
+    "Напоминание: ты уже продержался без сигареты сегодня, молодец!",
+    "Сохрани мотивацию — представь себя здоровым и свободным от никотина!",
+    "Каждое «нет» сигарете — это шаг к твоей цели."
 ]
 
-# Команды бота
+# --- Функции бота ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! 👋\nЯ помогу тебе бросить курить 🚭\n\nКоманды:\n/advice\n/craving\n/money <цена_пачки> <пачек_в_день> <дней>"
+        "Привет! Я твой помощник в отказе от курения. Пиши мне о своих чувствах и желаниях, "
+        "и я дам советы, как справиться с тягой к сигарете."
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🚭 Помощь по боту\n\n"
-        "/start — запуск бота\n"
-        "/advice — совет для отказа от курения\n"
-        "/craving — поддержка при тяге\n"
-        "/money — расчёт сэкономленных денег\n\nПример: /money 90 1 30"
-    )
+# Умная обработка сообщений через ключевые слова и синонимы
+async def smart_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    response = None
 
-async def advice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(ADVICE_LIST))
+    # Проверка по ключевым словам
+    if any(word in text for word in KEYWORDS["курение"]):
+        response = random.choice(ADVICE_LIST)
+    elif any(word in text for word in KEYWORDS["бросить"]):
+        response = "Отлично, что ты хочешь бросить! Продолжай в том же духе. 💪"
 
-async def craving(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(CRAVING_HELP))
+    # Если не найдено ключевых слов, даём нейтральный ответ
+    if not response:
+        response = "Я не совсем понял, но я могу дать советы по отказу от курения. Попробуй написать, что тебя тревожит."
 
-async def money(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 3:
-        await update.message.reply_text(
-            "Использование:\n/money <цена_пачки> <пачек_в_день> <дней>\nПример: /money 90 1 30"
-        )
-        return
-    try:
-        price = float(context.args[0])
-        packs_per_day = float(context.args[1])
-        days = int(context.args[2])
-        total = price * packs_per_day * days
-        await update.message.reply_text(f"💰 Экономия за {days} дней: {total:.2f} грн")
-    except ValueError:
-        await update.message.reply_text("Введите корректные числа!")
+    await update.message.reply_text(response)
 
-# Главная функция
+# Планировщик напоминаний каждые 2 часа
+async def reminders_scheduler(app):
+    while True:
+        for chat_id in context_data["chats"]:
+            await app.bot.send_message(chat_id, random.choice(REMINDERS))
+        await asyncio.sleep(7200)  # 2 часа
+
+# Хранилище чатов, чтобы отправлять напоминания
+context_data = {"chats": set()}
+
+async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context_data["chats"].add(update.effective_chat.id)
+    await smart_reply(update, context)
+
+# --- Главная функция ---
 def main():
-    if not TOKEN:
-        print("Ошибка: переменная окружения BOT_TOKEN не найдена!")
-        return
-
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Команда /start
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("advice", advice))
-    app.add_handler(CommandHandler("craving", craving))
-    app.add_handler(CommandHandler("money", money))
 
-    print("Бот запущен...")
+    # Все сообщения обрабатываем через трекер и умную функцию
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_chats))
+
+    # Запуск планировщика в фоне
+    async def scheduler():
+        await reminders_scheduler(app)
+
+    app.job_queue.run_repeating(lambda _: asyncio.create_task(scheduler()), interval=7200, first=10)
+
+    # Запуск бота
     app.run_polling()
 
 if __name__ == "__main__":
