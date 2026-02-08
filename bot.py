@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import random
 
-TOKEN = os.getenv("BOT_TOKEN")  # токен будет из переменной окружения
+TOKEN = os.getenv("BOT_TOKEN")  # <- токен не вставляем вручную!
 
 ADVICE_LIST = [
     "Начни с малого: откладывай первую сигарету дня на 30 минут.",
