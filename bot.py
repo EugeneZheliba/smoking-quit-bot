@@ -1,92 +1,87 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
 from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackContext
+)
 import random
 import datetime
 
-# Токен вашего бота
-TOKEN = "ВАШ_BOT_TOKEN"
+TOKEN = "8347663636:AAEXmoHDtxn98dgu13KeQLQzSW33SzpXn4c"
 
-# Хранилище для пользователей и прогресса
-user_data = {}
-
-# Советы и мотивация
-ADVICE_LIST = [
-    "Сделай глубокий вдох и выдох — тяга к сигарете пройдет.",
-    "Вспомни, зачем ты бросил курить. Ты сильнее привычки!",
-    "Замени сигарету на стакан воды или короткую прогулку.",
-    "Сфокусируйся на пользе для здоровья: лёгкие чистятся, сердце работает лучше.",
-]
-
-REMINDERS = [
-    "Напоминание: ты уже держишься без сигареты! Продолжай в том же духе.",
-    "Мотивация: представь себя свободным от никотина и здоровым.",
-]
-
-# Ключевые слова и их синонимы для «умного» ответа
-TRIGGERS = {
-    "кур": ["сигар", "затянулся", "курю", "тянет", "дым"],
-    "стресс": ["нервничаю", "раздражение", "тревога"],
-    "хочу": ["нужно", "не могу", "сильное желание"]
+# Словарь подсказок для отказа от курения
+RESPONSES = {
+    "курить": [
+        "Попробуй сделать глубокий вдох и выпить воды вместо сигареты.",
+        "Отвлекись на прогулку, это помогает снизить желание курить.",
+        "Вспомни, почему ты решил бросить курить — это мотивирует."
+    ],
+    "сигарета": [
+        "Сигарета ничего хорошего не даст, а твой прогресс важнее!",
+        "Давай заменим сигарету на полезную привычку — воду или фрукты."
+    ],
+    "никотин": [
+        "Никотин — временное удовольствие, а твое здоровье — навсегда!",
+        "Старайся переждать желание, оно проходит за несколько минут."
+    ],
+    "тянуться": [
+        "Попробуй заменить привычку тянуться к сигарете на дыхательное упражнение.",
+        "Каждое желание — шанс стать сильнее."
+    ]
 }
 
+# Хранение прогресса пользователей
+user_progress = {}
+
+# Команды
 async def start(update: Update, context: CallbackContext):
-    user_id = update.effective_chat.id
-    user_data[user_id] = {"start_time": datetime.datetime.now(), "last_message": ""}
+    user = update.effective_user
+    user_progress[user.id] = datetime.datetime.now()
     await update.message.reply_text(
-        "Привет! Я твой помощник в отказе от курения.\n"
-        "Пиши мне, когда тянет закурить, и я дам советы.\n"
-        "Я буду присылать мотивацию и напоминания каждый день."
+        f"Привет, {user.first_name}! Я помогу тебе бросить курить. "
+        "Пиши свои ощущения, и я дам советы."
     )
 
 async def progress(update: Update, context: CallbackContext):
-    user_id = update.effective_chat.id
-    if user_id in user_data:
-        start_time = user_data[user_id]["start_time"]
-        elapsed = datetime.datetime.now() - start_time
-        hours = elapsed.total_seconds() // 3600
-        days = hours // 24
-        await update.message.reply_text(
-            f"Ты держишься без сигарет уже {int(days)} дней и {int(hours % 24)} часов! Молодец!"
-        )
+    user = update.effective_user
+    start_time = user_progress.get(user.id)
+    if start_time:
+        days = (datetime.datetime.now() - start_time).days
+        await update.message.reply_text(f"Ты не куришь уже {days} дней! Молодец!")
     else:
-        await update.message.reply_text("Ты ещё не начал со мной путь к свободе от курения. Используй /start.")
+        await update.message.reply_text("Ты ещё не начал отслеживать прогресс. Напиши /start.")
 
-# Умные ответы по ключевым словам и синонимам
+# "Умные" ответы по синонимам
 async def smart_reply(update: Update, context: CallbackContext):
-    user_id = update.effective_chat.id
     text = update.message.text.lower()
-    response = "Я могу дать советы по отказу от курения, напиши, если тянет закурить."
+    for key, answers in RESPONSES.items():
+        if key in text:
+            await update.message.reply_text(random.choice(answers))
+            return
+    # Ответ по умолчанию, если не найдено ключевое слово
+    await update.message.reply_text("Держись, каждый момент без сигареты — победа!")
 
-    for key, synonyms in TRIGGERS.items():
-        if any(word in text for word in synonyms):
-            response = random.choice(ADVICE_LIST)
-            break
-
-    if user_id in user_data:
-        user_data[user_id]["last_message"] = text
-    else:
-        user_data[user_id] = {"start_time": datetime.datetime.now(), "last_message": text}
-
-    await update.message.reply_text(response)
-
-# Функция для регулярных напоминаний
+# Напоминания каждые 2 часа
 async def send_reminder(context: CallbackContext):
-    for user_id in user_data:
-        await context.bot.send_message(chat_id=user_id, text=random.choice(REMINDERS))
+    for user_id in user_progress:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="Напоминание: дыши глубоко, пей воду и не кури! 💪"
+        )
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Обработчики команд
+    # Обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("progress", progress))
-    # Обработчик всех текстовых сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, smart_reply))
 
-    # Напоминания каждые 4 часа
-    app.job_queue.run_repeating(send_reminder, interval=14400, first=10)
+    # JobQueue
+    app.job_queue.run_repeating(send_reminder, interval=7200, first=10)  # каждые 2 часа
 
-    # Запуск бота
     app.run_polling()
 
 if __name__ == "__main__":
